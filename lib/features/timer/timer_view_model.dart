@@ -207,6 +207,7 @@ class TimerViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _timerService.stop();
     super.dispose();
   }
 
@@ -283,9 +284,4 @@ class TimerViewModel extends ChangeNotifier {
     }
   }
 
-  @override
-  void dispose() {
-    _timerService.stop();
-    super.dispose();
-  }
 }
