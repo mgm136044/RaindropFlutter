@@ -202,10 +202,19 @@ class TimerViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   void triggerOverflow() {
     _isOverflowing = true;
     notifyListeners();
     Future.delayed(const Duration(seconds: 3), () {
+      if (_disposed) return;
       _isOverflowing = false;
       notifyListeners();
     });

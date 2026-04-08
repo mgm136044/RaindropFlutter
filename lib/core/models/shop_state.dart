@@ -68,13 +68,16 @@ class ShopState {
 
   factory ShopState.fromJson(Map<String, dynamic> json) {
     return ShopState(
-      totalBucketsEarned: json['totalBucketsEarned'] as int,
-      totalBucketsSpent: json['totalBucketsSpent'] as int,
-      purchasedItemIDs:
-          Set<String>.from(json['purchasedItemIDs'] as List<dynamic>),
-      placements: (json['placements'] as List<dynamic>)
-          .map((e) => StickerPlacement.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      totalBucketsEarned: json['totalBucketsEarned'] as int? ?? 0,
+      totalBucketsSpent: json['totalBucketsSpent'] as int? ?? 0,
+      purchasedItemIDs: json['purchasedItemIDs'] != null
+          ? Set<String>.from(json['purchasedItemIDs'] as List<dynamic>)
+          : {},
+      placements: json['placements'] != null
+          ? (json['placements'] as List<dynamic>)
+              .map((e) => StickerPlacement.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : [],
       totalFocusMinutes: json['totalFocusMinutes'] as int? ?? 0,
       consecutiveFocusDays: json['consecutiveFocusDays'] as int? ?? 0,
       lastFocusDateKey: json['lastFocusDateKey'] as String?,

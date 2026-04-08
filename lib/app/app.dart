@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../features/timer/timer_screen.dart';
-import '../features/timer/timer_view_model.dart';
 
 class RainDropApp extends StatelessWidget {
   const RainDropApp({super.key});

@@ -175,8 +175,6 @@ class BucketPainter extends CustomPainter {
     final centerX = size.width / 2;
     final centerY = -size.height * 0.30 + size.height * 0.06;
 
-    final radius = handleWidth / 2;
-
     final path = Path();
     path.addArc(
       Rect.fromCenter(

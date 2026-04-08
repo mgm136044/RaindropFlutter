@@ -1,20 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-
-/// A single sticker placement on the bucket.
-class StickerPlacement {
-  final String id;
-  final String itemID;
-  final double relativeX;
-  final double relativeY;
-
-  const StickerPlacement({
-    required this.id,
-    required this.itemID,
-    required this.relativeX,
-    required this.relativeY,
-  });
-}
+import 'package:raindrop_flutter/core/models/shop_catalog.dart';
+import 'package:raindrop_flutter/core/models/shop_state.dart';
 
 /// Read-only sticker overlay on bucket with wobble tap animation.
 /// Uses AnimationController with SpringSimulation for wobble + tilt.
@@ -103,8 +90,7 @@ class _StickerPlacementViewState extends State<StickerPlacementView>
     );
   }
 
-  /// Placeholder emoji lookup -- in production use ShopCatalog.
   String _emojiForItem(String itemID) {
-    return '\u{1F31F}'; // star
+    return ShopCatalog.item(itemID)?.emoji ?? '\u{2B50}';
   }
 }

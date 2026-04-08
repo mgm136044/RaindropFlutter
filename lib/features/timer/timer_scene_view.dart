@@ -1,7 +1,7 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:raindrop_flutter/core/models/bucket_skin.dart';
+import 'package:raindrop_flutter/core/models/shop_state.dart';
 import 'package:raindrop_flutter/features/timer/cloud_view.dart';
 import 'package:raindrop_flutter/features/timer/painters/bucket_painter.dart';
 import 'package:raindrop_flutter/features/timer/painters/overflow_painter.dart';
@@ -149,10 +149,10 @@ class _TimerSceneViewState extends State<TimerSceneView>
     final startTime = DateTime.now();
 
     void tick() {
+      if (!mounted) return;
       final elapsed =
           DateTime.now().difference(startTime).inMilliseconds;
       final t = (elapsed / drainDuration.inMilliseconds).clamp(0.0, 1.0);
-      // ease-in curve
       final curved = t * t;
       setState(() {
         _displayProgress = startProgress * (1 - curved);
@@ -160,7 +160,7 @@ class _TimerSceneViewState extends State<TimerSceneView>
       if (t < 1.0) {
         Future.delayed(const Duration(milliseconds: 16), tick);
       } else {
-        Future.delayed(const Duration(milliseconds: 100), onComplete);
+        if (mounted) onComplete();
       }
     }
 
