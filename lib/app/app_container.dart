@@ -18,8 +18,6 @@ class AppContainer {
 
   Future<void> initialize() async {
     fileStore = JsonFileStore();
-    await fileStore.initialize();
-
     dateService = DateService();
     sessionRepository = FocusSessionRepository(fileStore: fileStore);
     settingsRepository = SettingsRepository(fileStore: fileStore);

@@ -2,12 +2,41 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:raindrop_flutter/core/models/focus_session.dart';
 import 'package:raindrop_flutter/core/models/timer_state.dart';
+import 'package:raindrop_flutter/core/repositories/focus_session_repository.dart';
+import 'package:raindrop_flutter/core/repositories/settings_repository.dart';
+import 'package:raindrop_flutter/core/repositories/shop_repository.dart';
+import 'package:raindrop_flutter/core/services/date_service.dart';
+import 'package:raindrop_flutter/core/services/timer_service.dart';
 import 'package:raindrop_flutter/core/utils/time_formatter.dart';
 
-/// Timer ViewModel — ChangeNotifier port of TimerViewModel.swift (320 LOC).
+/// Timer ViewModel -- ChangeNotifier port of TimerViewModel.swift (320 LOC).
 /// Manages timer lifecycle, progress, infinity mode with cycle draining,
 /// overflow animation, and water level state.
 class TimerViewModel extends ChangeNotifier {
+  // ---------------------------------------------------------------------------
+  // Dependencies
+  // ---------------------------------------------------------------------------
+  final TimerService _timerService;
+  final FocusSessionRepository _sessionRepository;
+  final DateService _dateService;
+  final SettingsRepository _settingsRepository;
+  final ShopRepository _shopRepository;
+
+  TimerViewModel({
+    required TimerService timerService,
+    required FocusSessionRepository sessionRepository,
+    required DateService dateService,
+    required SettingsRepository settingsRepository,
+    required ShopRepository shopRepository,
+  })  : _timerService = timerService,
+        _sessionRepository = sessionRepository,
+        _dateService = dateService,
+        _settingsRepository = settingsRepository,
+        _shopRepository = shopRepository {
+    _loadSettings();
+    _loadTodayTotal();
+  }
+
   // ---------------------------------------------------------------------------
   // Published state
   // ---------------------------------------------------------------------------
@@ -26,7 +55,6 @@ class TimerViewModel extends ChangeNotifier {
   bool _isOverflowing = false;
 
   // Private
-  Timer? _timer;
   DateTime? _sessionStartTime;
   int _activeGoalSeconds = 0;
   bool _activeInfinityMode = false;
@@ -85,20 +113,6 @@ class TimerViewModel extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Settings
-  // ---------------------------------------------------------------------------
-  void updateSettings({required int goalSeconds, required bool infinityMode}) {
-    _sessionGoalSeconds = goalSeconds;
-    _isInfinityMode = infinityMode;
-    notifyListeners();
-  }
-
-  void setTodayTotal(int seconds) {
-    _todayTotalSeconds = seconds;
-    notifyListeners();
-  }
-
-  // ---------------------------------------------------------------------------
   // Timer lifecycle
   // ---------------------------------------------------------------------------
   void start() {
@@ -119,8 +133,7 @@ class TimerViewModel extends ChangeNotifier {
 
   void pause() {
     if (!canPause) return;
-    _timer?.cancel();
-    _timer = null;
+    _timerService.stop();
     _timerState = TimerState.paused;
     notifyListeners();
   }
@@ -134,16 +147,14 @@ class TimerViewModel extends ChangeNotifier {
 
   void stop() {
     if (!canStop) return;
-    _timer?.cancel();
-    _timer = null;
+    _timerService.stop();
 
     final endTime = DateTime.now();
     final elapsed = _elapsedSeconds;
     _lastCycleCount = _cycleCount;
 
     if (_sessionStartTime != null && elapsed > 0) {
-      final dateKey =
-          '${_sessionStartTime!.year}-${_sessionStartTime!.month.toString().padLeft(2, '0')}-${_sessionStartTime!.day.toString().padLeft(2, '0')}';
+      final dateKey = _dateService.dateKey(_sessionStartTime!);
       final session = FocusSession(
         startTime: _sessionStartTime!,
         endTime: endTime,
@@ -151,8 +162,15 @@ class TimerViewModel extends ChangeNotifier {
         dateKey: dateKey,
         goalSeconds: _activeInfinityMode ? null : _activeGoalSeconds,
       );
-      _lastCompletedSession = session;
-      _todayTotalSeconds += elapsed;
+
+      _sessionRepository.save(session).then((_) {
+        _lastCompletedSession = session;
+        _loadTodayTotal();
+        notifyListeners();
+      }).catchError((_) {
+        _latestError = '기록 저장에 실패했습니다.';
+        notifyListeners();
+      });
     }
 
     _timerState = TimerState.completed;
@@ -209,8 +227,7 @@ class TimerViewModel extends ChangeNotifier {
   }
 
   void _startTimerTicks() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _timerService.start(() {
       _elapsedSeconds += 1;
 
       if (_activeInfinityMode) {
@@ -233,9 +250,33 @@ class TimerViewModel extends ChangeNotifier {
     });
   }
 
+  Future<void> _loadSettings() async {
+    try {
+      final settings = await _settingsRepository.load();
+      _sessionGoalSeconds = settings.sessionGoalSeconds;
+      _isInfinityMode = settings.infinityModeEnabled;
+      notifyListeners();
+    } catch (_) {
+      // Use defaults
+    }
+  }
+
+  Future<void> _loadTodayTotal() async {
+    try {
+      final todayKey = _dateService.dateKey(DateTime.now());
+      final sessions = await _sessionRepository.fetchByDateKey(todayKey);
+      _todayTotalSeconds =
+          sessions.fold(0, (sum, s) => sum + s.durationSeconds);
+      notifyListeners();
+    } catch (_) {
+      _latestError = '기록을 불러오지 못했습니다.';
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
-    _timer?.cancel();
+    _timerService.stop();
     super.dispose();
   }
 }

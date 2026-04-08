@@ -1,13 +1,20 @@
+import 'dart:async';
+import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
-import 'timer_view_model.dart';
-import 'timer_controls.dart';
-import 'sky_background.dart';
-import '../history/history_screen.dart';
-import '../settings/settings_screen.dart';
-import '../shop/shop_screen.dart';
+import 'package:raindrop_flutter/core/models/bucket_skin.dart';
+import 'package:raindrop_flutter/core/utils/app_constants.dart';
+import 'package:raindrop_flutter/core/utils/time_formatter.dart';
+import 'package:raindrop_flutter/features/timer/sky_background.dart';
+import 'package:raindrop_flutter/features/timer/timer_controls.dart';
+import 'package:raindrop_flutter/features/timer/timer_scene_view.dart';
+import 'package:raindrop_flutter/features/timer/timer_view_model.dart';
+import 'package:raindrop_flutter/shared/components/glass_container.dart';
+import 'package:raindrop_flutter/shared/theme/app_colors.dart';
 
+/// Main timer screen -- Stack layout with 6 layers matching SwiftUI ZStack.
+/// Korean UI strings throughout.
 class TimerScreen extends StatefulWidget {
   const TimerScreen({super.key});
 
@@ -17,6 +24,7 @@ class TimerScreen extends StatefulWidget {
 
 class _TimerScreenState extends State<TimerScreen> {
   int _motivationIndex = 0;
+  Timer? _messageTimer;
 
   static const _runningMessages = [
     '물방울이 떨어지는 중',
@@ -36,10 +44,36 @@ class _TimerScreenState extends State<TimerScreen> {
     '한 방울의 시작이 큰 변화를 만들어요',
   ];
 
-  String get _currentMessage {
+  @override
+  void initState() {
+    super.initState();
+    _messageTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      _pickRandomMessage();
+    });
+  }
+
+  @override
+  void dispose() {
+    _messageTimer?.cancel();
+    super.dispose();
+  }
+
+  void _pickRandomMessage() {
     final vm = context.read<TimerViewModel>();
-    final messages = vm.isRunning ? _runningMessages : _idleMessages;
-    return messages[_motivationIndex % messages.length];
+    final count =
+        vm.isRunning ? _runningMessages.length : _idleMessages.length;
+    var next = Random().nextInt(count);
+    if (next == _motivationIndex % count && count > 1) {
+      next = (next + 1) % count;
+    }
+    setState(() => _motivationIndex = next);
+  }
+
+  String _currentMotivationMessage(TimerViewModel vm) {
+    if (vm.isRunning) {
+      return _runningMessages[_motivationIndex % _runningMessages.length];
+    }
+    return _idleMessages[_motivationIndex % _idleMessages.length];
   }
 
   @override
@@ -48,15 +82,24 @@ class _TimerScreenState extends State<TimerScreen> {
       builder: (context, vm, _) {
         return Stack(
           children: [
-            // Layer 0: Sky background
-            SkyBackground(
-              progress: vm.currentProgress,
-              isRunning: vm.isRunning,
+            // Layer 0: Dynamic sky background
+            Positioned.fill(
+              child: SkyBackground(
+                progress: vm.currentProgress,
+                isRunning: vm.isRunning,
+                isOverflowing: vm.isOverflowing,
+              ),
             ),
 
-            // Layer 1: Bucket scene (placeholder)
-            const Center(
-              child: Icon(Icons.water_drop, size: 120, color: Colors.blue),
+            // Layer 1: Scene (cloud + rain + bucket)
+            Center(
+              child: TimerSceneView(
+                viewModel: vm,
+                skin: BucketSkin.wood,
+                useCustomWaterColor: false,
+                dropGradientTop: AppColors.dropGradientTop(context),
+                dropGradientBottom: AppColors.dropGradientBottom(context),
+              ),
             ),
 
             // Layer 2: Header overlay
@@ -72,45 +115,81 @@ class _TimerScreenState extends State<TimerScreen> {
               top: 80,
               left: 0,
               right: 0,
-              child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
                 child: Text(
-                  _currentMessage,
+                  _currentMotivationMessage(vm),
+                  key: ValueKey(_motivationIndex),
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.secondaryText(context),
                   ),
                 ),
               ),
             ),
 
-            // Layer 4: Timer + controls
+            // Layer 4: Bottom controls + info
             Positioned(
-              bottom: 24,
+              bottom: 0,
               left: 0,
               right: 0,
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Timer capsule
-                  _buildTimerCapsule(context, vm),
+                  _buildTimerInfoCapsule(context, vm),
                   const SizedBox(height: 20),
-                  // Controls
-                  TimerControls(
-                    canStart: vm.canStart,
-                    canPause: vm.canPause,
-                    canResume: vm.canResume,
-                    canStop: vm.canStop,
-                    isCompact: vm.isRunning,
-                    onStart: () {
-                      vm.resetCompletionStateIfNeeded();
-                      vm.start();
-                    },
-                    onPause: vm.pause,
-                    onResume: vm.resume,
-                    onStop: vm.stop,
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    opacity: vm.isRunning ? 0.7 : 1.0,
+                    child: TimerControls(
+                      canStart: vm.canStart,
+                      canPause: vm.canPause,
+                      canResume: vm.canResume,
+                      canStop: vm.canStop,
+                      onStart: () {
+                        vm.resetCompletionStateIfNeeded();
+                        vm.start();
+                        _pickRandomMessage();
+                      },
+                      onPause: vm.pause,
+                      onResume: vm.resume,
+                      onStop: vm.stop,
+                      isCompact: vm.isRunning,
+                    ),
                   ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
+
+            // Layer 5: Error & completion banner
+            if (vm.latestError != null || vm.lastCompletedSession != null)
+              Positioned(
+                bottom: 0,
+                left: 32,
+                right: 32,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (vm.latestError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          vm.latestError!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.danger(context),
+                          ),
+                        ),
+                      ),
+                    if (vm.lastCompletedSession != null)
+                      _buildCompletionBanner(context, vm),
+                  ],
+                ),
+              ),
           ],
         );
       },
@@ -127,63 +206,124 @@ class _TimerScreenState extends State<TimerScreen> {
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
-          child: Row(
-            children: [
-              Text(
-                'RainDrop',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
+          decoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.5),
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(20),
+              bottomRight: Radius.circular(20),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Row(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'RainDrop',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.titleText(context),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        'v${AppConstants.appVersion}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.secondaryText(context)
+                              .withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'v2.1.1',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                const Spacer(),
+                Row(
+                  children: [
+                    _headerIconButton(
+                      context,
+                      icon: Icons.shopping_bag_outlined,
+                      onPressed: () {
+                        // TODO: Shop sheet
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _headerIconButton(
+                      context,
+                      icon: Icons.settings_outlined,
+                      onPressed: () {
+                        // TODO: Settings sheet
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _headerIconButton(
+                      context,
+                      icon: Icons.calendar_today_outlined,
+                      label: '히스토리',
+                      onPressed: () {
+                        // TODO: History sheet
+                      },
+                    ),
+                  ],
                 ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.shopping_bag_outlined, size: 18),
-                onPressed: () => _showSheet(context, const ShopScreen()),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                onPressed: () => _showSheet(context, const SettingsScreen()),
-              ),
-              FilledButton.icon(
-                onPressed: () => _showSheet(context, const HistoryScreen()),
-                icon: const Icon(Icons.calendar_today, size: 14),
-                label: const Text('히스토리', style: TextStyle(fontSize: 12)),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTimerCapsule(BuildContext context, TimerViewModel vm) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: vm.isRunning ? 5 : 20,
-          sigmaY: vm.isRunning ? 5 : 20,
+  Widget _headerIconButton(
+    BuildContext context, {
+    required IconData icon,
+    String? label,
+    required VoidCallback onPressed,
+  }) {
+    return GlassContainer(
+      borderRadius: 10,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppColors.primaryText(context)),
+            if (label != null) ...[
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.primaryText(context),
+                ),
+              ),
+            ],
+          ],
         ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withValues(
-              alpha: vm.isRunning ? 0.1 : 0.3,
-            ),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Column(
+      ),
+    );
+  }
+
+  Widget _buildTimerInfoCapsule(BuildContext context, TimerViewModel vm) {
+    return GlassContainer(
+      borderRadius: 28,
+      backgroundColor: vm.isRunning ? Colors.transparent : null,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
@@ -191,31 +331,133 @@ class _TimerScreenState extends State<TimerScreen> {
                 style: TextStyle(
                   fontSize: vm.isRunning ? 32 : 44,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: AppColors.primaryText(context),
+                ),
+              ),
+              if (vm.cycleText != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  vm.cycleText!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent(context),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                vm.goalText,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.tertiaryText(context),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  '\u00B7',
+                  style: TextStyle(
+                    color: AppColors.tertiaryText(context),
+                  ),
                 ),
               ),
               Text(
-                '${vm.goalText} · 오늘 ${vm.todayTotalText}',
+                '오늘 ${vm.todayTotalText}',
                 style: TextStyle(
                   fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.tertiaryText(context),
                 ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  void _showSheet(BuildContext context, Widget screen) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        child: SizedBox(
-          width: 620,
-          height: 580,
-          child: screen,
+  Widget _buildCompletionBanner(BuildContext context, TimerViewModel vm) {
+    final session = vm.lastCompletedSession!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: GlassContainer(
+        borderRadius: 18,
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '세션 저장 완료',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.bannerTitle(context),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (vm.isInfinityMode && vm.lastCycleCount > 0)
+                        Text(
+                          '+${vm.lastCycleCount}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accent(context),
+                          ),
+                        )
+                      else if (!vm.isInfinityMode &&
+                          session.durationSeconds >= vm.sessionGoalSeconds)
+                        Text(
+                          '+1',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accent(context),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '이번 집중 시간 ${TimeFormatter.clockString(session.durationSeconds)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.secondaryText(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: vm.resetCompletionStateIfNeeded,
+              child: GlassContainer(
+                borderRadius: 10,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text(
+                  '닫기',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.primaryText(context),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
